@@ -13,6 +13,9 @@ import (
 	"github.com/gorilla/mux"
 )
 
+var flagUser string
+var flagPass string
+
 type Document struct {
 	ID   string
 	Name string
@@ -21,10 +24,12 @@ type Document struct {
 
 func main() {
 	router := mux.NewRouter()
-	router.HandleFunc("/documents", getDocuments).Methods("GET")
-	router.HandleFunc("/documents/{id}", getDocumentById).Methods("GET")
-	router.HandleFunc("/documents/{id}", deleteDocuments).Methods("DELETE")
-	router.HandleFunc("/documents", uploadDocument).Methods("POST")
+	flagUser = "user"
+	flagPass = "pass"
+	router.HandleFunc("/documents", use(getDocuments, basicAuth)).Methods("GET")
+	router.HandleFunc("/documents/{id}", use(getDocumentById, basicAuth)).Methods("GET")
+	router.HandleFunc("/documents/{id}", use(deleteDocuments, basicAuth)).Methods("DELETE")
+	router.HandleFunc("/documents", use(uploadDocument, basicAuth)).Methods("POST")
 	log.Fatal(http.ListenAndServe(":9001", router))
 }
 
@@ -156,4 +161,32 @@ func hash_file_md5(filePath string) (string, error) {
 	hashInBytes := hash.Sum(nil)[:16]
 	returnMD5String = hex.EncodeToString(hashInBytes)
 	return returnMD5String, nil
+}
+
+func basicAuth(h http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, _ := r.BasicAuth()
+
+		if flagUser != user || flagPass != pass {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			http.Error(w, "Unauthorized.", http.StatusUnauthorized)
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
+}
+
+func use(h http.HandlerFunc, middleware ...func(http.HandlerFunc) http.HandlerFunc) http.HandlerFunc {
+	for _, m := range middleware {
+		h = m(h)
+	}
+
+	return h
+}
+
+func myHandler(w http.ResponseWriter, r *http.Request) {
+
+	w.Write([]byte("Authenticated!"))
+	return
 }
