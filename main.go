@@ -1,11 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,40 +30,62 @@ type DocumentDAO struct {
 	Path string
 }
 
-var docs map[string]DocumentDAO
-
-func main() {
-	router := mux.NewRouter()
-	docs = make(map[string]DocumentDAO)
-	flagUser = "user"
-	flagPass = "pass"
-	router.HandleFunc("/documents", use(getDocuments, basicAuth)).Methods("GET")
-	router.HandleFunc("/documents/{id}", use(getDocumentById, basicAuth)).Methods("GET")
-	router.HandleFunc("/documents/download/{id}", use(serveDocuments, basicAuth)).Methods("GET")
-	router.HandleFunc("/documents/{id}", use(deleteDocuments, basicAuth)).Methods("DELETE")
-	router.HandleFunc("/documents", use(uploadDocument, basicAuth)).Methods("POST")
-	log.Fatal(http.ListenAndServe(":9001", router))
+type User struct {
+	ID    string
+	Name  string
+	Email string
 }
 
-func uploadDocument(w http.ResponseWriter, r *http.Request) {
-	r.ParseMultipartForm(32 << 20)
+var docs map[string]DocumentDAO
+var users map[string]User
+
+/*func main() {
+	/*
+		router := mux.NewRouter()
+		docs = make(map[string]DocumentDAO)
+		users = make(map[string]User)
+
+		c := cors.New(cors.Options{
+			AllowedOrigins: []string{"*"},                            // All origins
+			AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"}, // Allowing only get, just an example
+		})
+
+		flagUser = "user"
+		flagPass = "pass"
+		router.HandleFunc("/dss/api/documents", use(getDocuments, basicAuth)).Methods("GET")
+		router.HandleFunc("/dss/api/documents/{id}", use(getDocumentById, basicAuth)).Methods("GET")
+		router.HandleFunc("/dss/api/documents/download/{id}", use(serveDocuments, basicAuth)).Methods("GET")
+		router.HandleFunc("/dss/api/documents/{id}", use(deleteDocuments, basicAuth)).Methods("DELETE")
+		router.HandleFunc("/dss/api/documents", use(uploadDocument, basicAuth)).Methods("POST")
+
+		log.Fatal(http.ListenAndServe(":9001", c.Handler(router)))
+
+}*/
+
+func UploadDocument(file []byte, name string) string {
+	/*r.ParseMultipartForm(32 << 20)
 	file, handler, err := r.FormFile("file")
 	if err != nil {
+		fmt.Println("no pudo cargar el file")
+		fmt.Println(err)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
-	}
-	defer file.Close()
-	f, err := os.OpenFile("./temp/"+handler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
+	}*/
+	//defer file.Close()
+	f, err := os.OpenFile("./temp/"+name, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		http.Error(w, "", http.StatusInternalServerError)
-		return
+		fmt.Println("no pudo escribir el file")
+		return ""
 	}
 	defer f.Close()
-	io.Copy(f, file)
+	r := bytes.NewReader(file)
+	io.Copy(f, r)
+
+	return name
 
 }
 
-func getDocumentById(w http.ResponseWriter, r *http.Request) {
+func GetDocumentById(w http.ResponseWriter, r *http.Request) {
 	//var docs []Document
 	docs = loadDocuments(docs)
 	vars := mux.Vars(r)
@@ -76,7 +99,7 @@ func getDocumentById(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if documentInArray(vars["id"], docs) {
+	if documentInArray(vars["id"], docs) != "" {
 		json.NewEncoder(w).Encode(parseDocument(doc))
 	} else {
 		http.Error(w, "", http.StatusNotFound)
@@ -85,23 +108,24 @@ func getDocumentById(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func documentInArray(a string, list map[string]DocumentDAO) bool {
+func documentInArray(a string, list map[string]DocumentDAO) string {
 	for _, b := range list {
 		if b.ID == a {
-			return true
+			return b.Name
 		}
 	}
-	return false
+	return ""
 }
 
-func getDocuments(w http.ResponseWriter, r *http.Request) {
+func GetDocuments() map[string]DocumentDAO {
 	var docs map[string]DocumentDAO
 	docs = make(map[string]DocumentDAO)
 	docs = loadDocuments(docs)
+	return docs
 
-	w.Header().Set("Content-Type", "application/json")
+	//w.Header().Set("Content-Type", "application/json")
 
-	json.NewEncoder(w).Encode(parseDocuments(docs))
+	//json.NewEncoder(w).Encode(parseDocuments(docs))
 	//json.NewEncoder(w).Encode(docs)
 
 }
@@ -125,18 +149,16 @@ func loadDocuments(docs map[string]DocumentDAO) map[string]DocumentDAO {
 	return docs
 }
 
-func deleteDocuments(w http.ResponseWriter, r *http.Request) {
+func DeleteDocuments(id string) string {
 	//var docs []Document
+	docs = make(map[string]DocumentDAO)
 	docs = loadDocuments(docs)
-	vars := mux.Vars(r)
-
-	w.Header().Set("Content-Type", "application/json")
-
-	if documentInArray(vars["id"], docs) {
-		deleteDocument(vars["id"])
+	result := documentInArray(id, docs)
+	if result != "" {
+		deleteDocument(id)
+		return docs[id].Name
 	} else {
-		http.Error(w, "", http.StatusNotFound)
-
+		return ""
 	}
 
 }
@@ -192,14 +214,13 @@ func basicAuth(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func use(h http.HandlerFunc, middleware ...func(http.HandlerFunc) http.HandlerFunc) http.HandlerFunc {
-	for _, m := range middleware {
+	/*for _, m := range middleware {
 		h = m(h)
-	}
-
+	}*/ //esto da cabeceras de seguridad
 	return h
 }
 
-func serveDocuments(w http.ResponseWriter, r *http.Request) {
+func ServeDocuments(w http.ResponseWriter, r *http.Request) {
 	//var docs []Document
 	docs = loadDocuments(docs)
 	vars := mux.Vars(r)
@@ -207,7 +228,7 @@ func serveDocuments(w http.ResponseWriter, r *http.Request) {
 	//w.Header().Set("Content-Type", "application/octet-stream")
 	//w.Header().Set("Content-Disposition", "attachment")
 
-	if documentInArray(vars["id"], docs) {
+	if documentInArray(vars["id"], docs) != "" {
 		docPath = serveDocument(vars["id"])
 		if docPath != "" {
 
@@ -243,11 +264,11 @@ func serveDocument(docId string) string {
 
 }
 
-func parseDocuments(dao map[string]DocumentDAO) map[string]Document {
-	var d map[string]Document
-	d = make(map[string]Document)
+func parseDocuments(dao map[string]DocumentDAO) []Document {
+	var d []Document
+	d = make([]Document, 0)
 	for _, data := range dao {
-		d[data.ID] = Document{ID: data.ID, Name: data.Name, Size: data.Size}
+		d = append(d, Document{ID: data.ID, Name: data.Name, Size: data.Size})
 	}
 	return d
 }
